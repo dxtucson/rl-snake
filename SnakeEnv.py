@@ -26,16 +26,19 @@ class SnakeEnv(py_environment.PyEnvironment):
     episode = 0
     snake_row = []
     snake_col = []
+    snake_head_r = 0
+    snake_head_c = 0
     reward = 0
     reward_X = -1
     reward_Y = -1
     root = tkinter.Tk()
     episode_str = tkinter.StringVar()
-    episode_str.set('Episode: 0')
+    episode_str.set('Generation: 0')
     score_str = tkinter.StringVar()
     score_str.set('Score: 0')
     status = Status.DIED
     canvas = tkinter.Canvas(root, bg='black', height=HEIGHT + 40, width=WIDTH)
+    got_reward = False
 
     def __init__(self, seed=42):
         tf.random.set_seed(seed)
@@ -62,33 +65,41 @@ class SnakeEnv(py_environment.PyEnvironment):
         self.canvas.pack()
 
         self._action_spec = array_spec.BoundedArraySpec(shape=(), dtype=np.int32, minimum=0, maximum=3, name='action')
-        # 20 x, 20 y, 2 for reward xy
-        self._observation_spec = array_spec.BoundedArraySpec(shape=(42,), dtype=np.int32, minimum=[0] * 42,
-                                                             maximum=[1] * 42,
+        # 20 x, 20 y, 2 for reward xy, 2 for snake head
+        self._observation_spec = array_spec.BoundedArraySpec(shape=(6,), dtype=np.int32, minimum=[-1] * 6,
+                                                             maximum=[20] * 6,
                                                              name='observation')
-        self._state = [0] * 42
+        self._state = [0] * 6
         self._episode_ended = False
 
     def update_state(self):
-        self._state = [0] * 42
-        for r in self.snake_row:
-            self._state[r] = 1
-        for c in self.snake_col:
-            self._state[c + 20] = 1
-        self._state[40] = self.reward_X
-        self._state[41] = self.reward_Y
+
+        self._state[0] = self.snake_row[0]
+        self._state[1] = self.snake_col[0]
+        self._state[2] = self.snake_head_r
+        self._state[3] = self.snake_head_c
+        self._state[4] = self.reward_X
+        self._state[5] = self.reward_Y
 
     def update_snake(self):
         head_row = self.snake_row[0]
         head_col = self.snake_col[0]
         if self.status == Status.UP:
             head_row -= 1
+            self.snake_head_r = head_row - 1
+            self.snake_head_c = head_col
         elif self.status == Status.RIGHT:
             head_col += 1
+            self.snake_head_r = head_row
+            self.snake_head_c = head_col + 1
         elif self.status == Status.DOWN:
             head_row += 1
+            self.snake_head_r = head_row + 1
+            self.snake_head_c = head_col
         elif self.status == Status.LEFT:
             head_col -= 1
+            self.snake_head_r = head_row
+            self.snake_head_c = head_col - 1
         if 0 <= head_row < 20 and 0 <= head_col < 20:
             self.snake_row.insert(0, head_row)
             self.snake_col.insert(0, head_col)
@@ -98,6 +109,7 @@ class SnakeEnv(py_environment.PyEnvironment):
     def check_reward(self):
         if self.reward_X == self.snake_row[0] and self.reward_Y == self.snake_col[0]:
             self.reward += 1
+            self.got_reward = True
             self.score_str.set(f'Score: {self.reward}')
             self.create_reward()
         else:
@@ -115,8 +127,12 @@ class SnakeEnv(py_environment.PyEnvironment):
             self.canvas.itemconfig(reward[0], fill='yellow')
 
     def create_reward(self):
-        reward_r = randint(0, 19)
-        reward_c = randint(0, 19)
+        if self.episode < 100:
+            reward_r = randint(6, 10)
+            reward_c = randint(6, 10)
+        else:
+            reward_r = randint(0, 19)
+            reward_c = randint(0, 19)
         for i, r in enumerate(self.snake_row):
             if self.snake_row[i] == reward_r and self.snake_col[i] == reward_c:
                 self.create_reward()
@@ -137,17 +153,20 @@ class SnakeEnv(py_environment.PyEnvironment):
         self.reward = 0
         self.reward_X = -1
         self.reward_Y = -1
+        self.snake_head_r = 9
+        self.snake_head_c = 5
         self.episode += 1
-        self.episode_str.set(f'Episode: {self.episode}')
+        self.episode_str.set(f'Generation: {self.episode}')
         self._episode_ended = False
+        self.got_reward = False
         for r in range(20):
             for c in range(20):
                 items = self.canvas.find_withtag('{},{}'.format(r, c))
                 self.canvas.itemconfig(items[0], fill='black', outline='')
         self.draw_snake()
-        #self.root.update()
+        self.root.update()
         self.create_reward()
-        #self.root.update()
+        self.root.update()
         return ts.restart(np.array(self._state, dtype=np.int32))
 
     def _step(self, action):
@@ -161,16 +180,29 @@ class SnakeEnv(py_environment.PyEnvironment):
             elif action == 3 and self.status != Status.RIGHT:  # left
                 self.status = Status.LEFT
             self.update_snake()
+            if self.episode < 300:
+                _ret = ts.termination(np.array(self._state, dtype=np.int32), -10)
+            else:
+                _ret = ts.termination(np.array(self._state, dtype=np.int32), 0 - self.reward)
+
             if self.status == Status.DIED:
                 self.reset()
                 self._episode_ended = True
-                return ts.termination(np.array(self._state, dtype=np.int32), self.reward)
+                return _ret
+
             self.check_reward()
             self.draw_snake()
             self.update_state()
-            #self.root.update()
-            return ts.transition(np.array(self._state, dtype=np.int32),
-                                 reward=self.reward)  # reward snake if it survives
-
+            self.root.update()
+            if self.got_reward:
+                self.got_reward = False
+                return ts.transition(np.array(self._state, dtype=np.int32),
+                                     reward=100)
+            elif self.episode < 300:
+                return ts.transition(np.array(self._state, dtype=np.int32),
+                                     reward=-0.01)
+            else:
+                return ts.transition(np.array(self._state, dtype=np.int32),
+                                     reward=-1)
     def seed(self, seed):
         tf.random.set_seed(seed)

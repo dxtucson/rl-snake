@@ -7,6 +7,7 @@ from tf_agents.agents import DqnAgent
 from tf_agents.environments import wrappers
 from tf_agents.environments.tf_py_environment import TFPyEnvironment
 from tf_agents.networks.q_network import QNetwork
+from tf_agents.policies import PolicySaver
 
 from SnakeEnv import SnakeEnv
 from tf_agents.environments import utils
@@ -39,13 +40,13 @@ tf_env = TFPyEnvironment(env)
 #
 # while True:
 #     time.sleep(10)
-# conv_layer_params=[(32, (8, 8), 4), (64, (4, 4), 2), (64, (3, 3), 1)]
-fc_layer_params=[42]
+#conv_layer_params=[(32, (8, 8), 4), (64, (4, 4), 2), (64, (3, 3), 1)]
+fc_layer_params=[200,50]
 
 q_net = QNetwork(
     tf_env.observation_spec(),
     tf_env.action_spec(),
-   # conv_layer_params=conv_layer_params,
+    #conv_layer_params=conv_layer_params,
     fc_layer_params=fc_layer_params)
 train_step = tf.Variable(0)
 update_period = 4  # run a training step every 4 collect steps
@@ -53,6 +54,7 @@ agent = DqnAgent(
     tf_env.time_step_spec(),
     tf_env.action_spec(),
     q_network=q_net,
+    gamma=0.95,
     optimizer=tf.compat.v1.train.AdamOptimizer(learning_rate=1e-3),
     td_errors_loss_fn=common.element_wise_squared_loss,
     train_step_counter=train_step)
@@ -126,14 +128,15 @@ dataset = replay_buffer.as_dataset(
 
 from tf_agents.utils.common import function
 
-collect_driver.run = function(collect_driver.run)
-agent.train = function(agent.train)
+# collect_driver.run = function(collect_driver.run)
+# agent.train = function(agent.train)
 
 from tf_agents.eval.metric_utils import log_metrics
 import logging
 
 logging.getLogger().setLevel(logging.INFO)
 log_metrics(train_metrics)
+
 
 
 def train_agent(n_iterations):
@@ -148,7 +151,10 @@ def train_agent(n_iterations):
             iteration, train_loss.loss.numpy()), end="")
         if iteration % 1000 == 0:
             log_metrics(train_metrics)
+            my_policy = agent.collect_policy
 
+    saver = PolicySaver(my_policy, batch_size=None)
+    saver.save('policy_%d' % iteration)
 
 train_agent(n_iterations=10000)
 
@@ -160,10 +166,11 @@ def save_frames(trajectory):
     total_score2 += tf_env.pyenv.current_time_step().reward[0]
 
 
+input("Press Enter to continue...")
 watch_driver = DynamicStepDriver(
     tf_env,
     agent.policy,
     observers=[save_frames],
-    num_steps=1000)
+    num_steps=10000)
 final_time_step, final_policy_state = watch_driver.run()
 print(f'\nafter training score: {total_score2}')
