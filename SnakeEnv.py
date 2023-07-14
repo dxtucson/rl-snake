@@ -4,10 +4,9 @@ from random import randint
 
 import tensorflow as tf
 import numpy as np
-from tf_agents.environments import py_environment, wrappers
+from tf_agents.environments import py_environment
 from tf_agents.specs import array_spec
 from tf_agents.trajectories import time_step as ts
-from tf_agents.environments import utils
 
 WIDTH = 440
 HEIGHT = 440
@@ -32,8 +31,6 @@ class SnakeEnv(py_environment.PyEnvironment):
     highest_score = 0
     reward_X = -1
     reward_Y = -1
-    # will_hit_wall = 0
-    # will_hit_self = 0
     root = tkinter.Tk()
     episode_str = tkinter.StringVar()
     episode_str.set('Generation: 0')
@@ -104,10 +101,6 @@ class SnakeEnv(py_environment.PyEnvironment):
             if self.status == Status.LEFT:
                 self._state[46] = 1
 
-        # self._state[46] = self.will_hit_wall
-        # self._state[47] = self.will_hit_self
-        # self._state[46] = self.status.value
-
     def head_will_hit_self(self):
         for i, r in enumerate(self.snake_row[0:-1]):
             if r == self.snake_next_head_r and self.snake_col[i] == self.snake_next_head_c:
@@ -139,10 +132,6 @@ class SnakeEnv(py_environment.PyEnvironment):
             head_col -= 1
             self.snake_next_head_r = head_row
             self.snake_next_head_c = head_col - 1
-        # self.will_hit_wall = self.snake_next_head_r > 19 or self.snake_next_head_r < 0 or \
-        #                      self.snake_next_head_c > 19 or self.snake_next_head_c < 0
-        # self.will_hit_self = self.head_will_hit_self()
-        # if 0 <= head_row < 20 and 0 <= head_col < 20 and not self.head_hit_self():
         if 0 <= head_row < 20 and 0 <= head_col < 20:
             self.snake_row.insert(0, head_row)
             self.snake_col.insert(0, head_col)
@@ -200,8 +189,6 @@ class SnakeEnv(py_environment.PyEnvironment):
         self.reward = 0
         self.reward_X = -1
         self.reward_Y = -1
-        # self.will_hit_wall = 0
-        # self.will_hit_self = 0
         self.snake_next_head_r = 9
         self.snake_next_head_c = 5
         self.episode += 1
