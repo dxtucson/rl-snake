@@ -22,8 +22,8 @@ env = SnakeEnv()
 env.seed(43)
 env.reset()
 np.random.seed(42)
-#env.step(1)
-#print(env.current_time_step())
+# env.step(1)
+# print(env.current_time_step())
 tf_env = TFPyEnvironment(env)
 # preprocessing_layer = keras.layers.Lambda(
 #     lambda obs: tf.cast(obs, np.float32) / 255.)
@@ -40,16 +40,16 @@ tf_env = TFPyEnvironment(env)
 #
 # while True:
 #     time.sleep(10)
-#conv_layer_params=[(32, (8, 8), 4), (64, (4, 4), 2), (64, (3, 3), 1)]
-fc_layer_params=[200,50]
+# conv_layer_params=[(32, (8, 8), 4), (64, (4, 4), 2), (64, (3, 3), 1)]
+fc_layer_params = [200, 80, 40]
 
 q_net = QNetwork(
     tf_env.observation_spec(),
     tf_env.action_spec(),
-    #conv_layer_params=conv_layer_params,
+    # conv_layer_params=conv_layer_params,
     fc_layer_params=fc_layer_params)
 train_step = tf.Variable(0)
-update_period = 4  # run a training step every 4 collect steps
+update_period = 10  # run a training step every 4 collect steps
 agent = DqnAgent(
     tf_env.time_step_spec(),
     tf_env.action_spec(),
@@ -138,7 +138,6 @@ logging.getLogger().setLevel(logging.INFO)
 log_metrics(train_metrics)
 
 
-
 def train_agent(n_iterations):
     time_step = None
     policy_state = agent.collect_policy.get_initial_state(tf_env.batch_size)
@@ -156,7 +155,8 @@ def train_agent(n_iterations):
     saver = PolicySaver(my_policy, batch_size=None)
     saver.save('policy_%d' % iteration)
 
-train_agent(n_iterations=10000)
+
+train_agent(n_iterations=100000)
 
 total_score2 = 0
 

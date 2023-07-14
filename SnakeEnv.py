@@ -15,10 +15,10 @@ SNAKE_W = 20
 
 
 class Status(Enum):
-    UP = 1
-    RIGHT = 2
-    DOWN = 3
-    LEFT = 4
+    UP = 0
+    RIGHT = 1
+    DOWN = 2
+    LEFT = 3
     DIED = 100
 
 
@@ -26,11 +26,14 @@ class SnakeEnv(py_environment.PyEnvironment):
     episode = 0
     snake_row = []
     snake_col = []
-    snake_head_r = 0
-    snake_head_c = 0
+    snake_next_head_r = 0
+    snake_next_head_c = 0
     reward = 0
+    highest_score = 0
     reward_X = -1
     reward_Y = -1
+    # will_hit_wall = 0
+    # will_hit_self = 0
     root = tkinter.Tk()
     episode_str = tkinter.StringVar()
     episode_str.set('Generation: 0')
@@ -63,43 +66,83 @@ class SnakeEnv(py_environment.PyEnvironment):
         score_label.place(x=WIDTH - SNAKE_W, y=HEIGHT + 20, anchor='e')
         # add to window and show
         self.canvas.pack()
-
         self._action_spec = array_spec.BoundedArraySpec(shape=(), dtype=np.int32, minimum=0, maximum=3, name='action')
-        # 20 x, 20 y, 2 for reward xy, 2 for snake head
-        self._observation_spec = array_spec.BoundedArraySpec(shape=(6,), dtype=np.int32, minimum=[-1] * 6,
-                                                             maximum=[20] * 6,
+        # 40 snake_x and 20 snake_y, 2 for snake head, 2 for reward xy, 1 for direction, 4 for death move
+        min = [0] * 40 + [0, 0] + [0, 0] + [0] + [0, 0, 0, 0]
+        max = [1] * 40 + [19, 19] + [19, 19] + [3] + [1, 1, 1, 1]
+        self._observation_spec = array_spec.BoundedArraySpec(shape=(49,), dtype=np.int32, minimum=min,
+                                                             maximum=max,
                                                              name='observation')
-        self._state = [0] * 6
+        self._state = [0] * 49
         self._episode_ended = False
 
     def update_state(self):
+        self._state = [0] * 49
+        for row in self.snake_row:
+            self._state[row] = 1
+        for col in self.snake_col:
+            self._state[20 + col] = 1
+        self._state[40] = self.snake_row[0]
+        self._state[41] = self.snake_col[0]
+        self._state[42] = self.reward_X
+        self._state[43] = self.reward_Y
+        self._state[44] = self.status.value
+        if self.snake_row[0] == 0:
+            self._state[45] = 1
+            if self.status == Status.UP:
+                self._state[47] = 1
+        if self.snake_col[0] == 19:
+            self._state[46] = 1
+            if self.status == Status.RIGHT:
+                self._state[48] = 1
+        if self.snake_row[0] == 19:
+            self._state[47] = 1
+            if self.status == Status.DOWN:
+                self._state[45] = 1
+        if self.snake_col[0] == 1:
+            self._state[48] = 1
+            if self.status == Status.LEFT:
+                self._state[46] = 1
 
-        self._state[0] = self.snake_row[0]
-        self._state[1] = self.snake_col[0]
-        self._state[2] = self.snake_head_r
-        self._state[3] = self.snake_head_c
-        self._state[4] = self.reward_X
-        self._state[5] = self.reward_Y
+        # self._state[46] = self.will_hit_wall
+        # self._state[47] = self.will_hit_self
+        # self._state[46] = self.status.value
+
+    def head_will_hit_self(self):
+        for i, r in enumerate(self.snake_row[0:-1]):
+            if r == self.snake_next_head_r and self.snake_col[i] == self.snake_next_head_c:
+                return True
+        return False
+
+    def head_hit_self(self):
+        for i, r in enumerate(self.snake_row[1:]):
+            if r == self.snake_row[0] and self.snake_col[1 + i] == self.snake_col[0]:
+                return True
+        return False
 
     def update_snake(self):
         head_row = self.snake_row[0]
         head_col = self.snake_col[0]
         if self.status == Status.UP:
             head_row -= 1
-            self.snake_head_r = head_row - 1
-            self.snake_head_c = head_col
+            self.snake_next_head_r = head_row - 1
+            self.snake_next_head_c = head_col
         elif self.status == Status.RIGHT:
             head_col += 1
-            self.snake_head_r = head_row
-            self.snake_head_c = head_col + 1
+            self.snake_next_head_r = head_row
+            self.snake_next_head_c = head_col + 1
         elif self.status == Status.DOWN:
             head_row += 1
-            self.snake_head_r = head_row + 1
-            self.snake_head_c = head_col
+            self.snake_next_head_r = head_row + 1
+            self.snake_next_head_c = head_col
         elif self.status == Status.LEFT:
             head_col -= 1
-            self.snake_head_r = head_row
-            self.snake_head_c = head_col - 1
+            self.snake_next_head_r = head_row
+            self.snake_next_head_c = head_col - 1
+        # self.will_hit_wall = self.snake_next_head_r > 19 or self.snake_next_head_r < 0 or \
+        #                      self.snake_next_head_c > 19 or self.snake_next_head_c < 0
+        # self.will_hit_self = self.head_will_hit_self()
+        # if 0 <= head_row < 20 and 0 <= head_col < 20 and not self.head_hit_self():
         if 0 <= head_row < 20 and 0 <= head_col < 20:
             self.snake_row.insert(0, head_row)
             self.snake_col.insert(0, head_col)
@@ -109,6 +152,8 @@ class SnakeEnv(py_environment.PyEnvironment):
     def check_reward(self):
         if self.reward_X == self.snake_row[0] and self.reward_Y == self.snake_col[0]:
             self.reward += 1
+            self.highest_score = max(self.reward, self.highest_score)
+            self.episode_str.set(f'Generation: {self.episode}  Best Score: {self.highest_score}')
             self.got_reward = True
             self.score_str.set(f'Score: {self.reward}')
             self.create_reward()
@@ -127,15 +172,17 @@ class SnakeEnv(py_environment.PyEnvironment):
             self.canvas.itemconfig(reward[0], fill='yellow')
 
     def create_reward(self):
-        if self.episode < 100:
-            reward_r = randint(6, 10)
-            reward_c = randint(6, 10)
+        if len(self.snake_row) < 12 and self.episode < 800:
+            reward_r = randint(7, 11)
+            reward_c = randint(7, 11)
         else:
             reward_r = randint(0, 19)
             reward_c = randint(0, 19)
         for i, r in enumerate(self.snake_row):
             if self.snake_row[i] == reward_r and self.snake_col[i] == reward_c:
-                self.create_reward()
+                reward_r = randint(0, 19)
+                reward_c = randint(0, 19)
+                break
         self.reward_X = reward_r
         self.reward_Y = reward_c
 
@@ -153,10 +200,12 @@ class SnakeEnv(py_environment.PyEnvironment):
         self.reward = 0
         self.reward_X = -1
         self.reward_Y = -1
-        self.snake_head_r = 9
-        self.snake_head_c = 5
+        # self.will_hit_wall = 0
+        # self.will_hit_self = 0
+        self.snake_next_head_r = 9
+        self.snake_next_head_c = 5
         self.episode += 1
-        self.episode_str.set(f'Generation: {self.episode}')
+        self.episode_str.set(f'Generation: {self.episode}  Best Score: {self.highest_score}')
         self._episode_ended = False
         self.got_reward = False
         for r in range(20):
@@ -167,6 +216,7 @@ class SnakeEnv(py_environment.PyEnvironment):
         self.root.update()
         self.create_reward()
         self.root.update()
+        self.update_state()
         return ts.restart(np.array(self._state, dtype=np.int32))
 
     def _step(self, action):
@@ -180,29 +230,25 @@ class SnakeEnv(py_environment.PyEnvironment):
             elif action == 3 and self.status != Status.RIGHT:  # left
                 self.status = Status.LEFT
             self.update_snake()
-            if self.episode < 300:
-                _ret = ts.termination(np.array(self._state, dtype=np.int32), -10)
-            else:
-                _ret = ts.termination(np.array(self._state, dtype=np.int32), 0 - self.reward)
-
             if self.status == Status.DIED:
-                self.reset()
                 self._episode_ended = True
+                _ret = ts.termination(np.array(self._state, dtype=np.int32), -100)
+                self.reset()
                 return _ret
-
             self.check_reward()
             self.draw_snake()
-            self.update_state()
             self.root.update()
+            self.update_state()
             if self.got_reward:
                 self.got_reward = False
                 return ts.transition(np.array(self._state, dtype=np.int32),
                                      reward=100)
-            elif self.episode < 300:
+            elif self.head_hit_self():
                 return ts.transition(np.array(self._state, dtype=np.int32),
-                                     reward=-0.01)
+                                     reward=-0.1)
             else:
                 return ts.transition(np.array(self._state, dtype=np.int32),
-                                     reward=-1)
+                                     reward=0)
+
     def seed(self, seed):
         tf.random.set_seed(seed)
