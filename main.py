@@ -9,6 +9,27 @@ from SnakeEnv import SnakeEnv
 import tensorflow as tf
 from tf_agents.utils import common
 from tf_agents.replay_buffers import tf_uniform_replay_buffer
+# To plot pretty figures
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+mpl.rc('axes', labelsize=14)
+mpl.rc('xtick', labelsize=12)
+mpl.rc('ytick', labelsize=12)
+mpl.rc('animation', html='jshtml')
+# Where to save the figures
+PROJECT_ROOT_DIR = "."
+CHAPTER_ID = "rl"
+IMAGES_PATH = os.path.join(PROJECT_ROOT_DIR, "images", CHAPTER_ID)
+os.makedirs(IMAGES_PATH, exist_ok=True)
+
+
+def save_fig(fig_id, tight_layout=True, fig_extension="png", resolution=300):
+    path = os.path.join(IMAGES_PATH, fig_id + "." + fig_extension)
+    print("Saving figure", fig_id)
+    if tight_layout:
+        plt.tight_layout()
+    plt.savefig(path, format=fig_extension, dpi=resolution)
+
 
 env = SnakeEnv()
 env.seed(43)
@@ -40,17 +61,17 @@ replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
 
 replay_buffer_observer = replay_buffer.add_batch
 
+plot_data = []
 
-class ShowProgress:
-    def __init__(self, total):
+
+class CollectRewardData:
+    def __init__(self):
         self.counter = 0
-        self.total = total
 
     def __call__(self, trajectory):
-        if not trajectory.is_boundary():
-            self.counter += 1
-        if self.counter % 100 == 0:
-            print("\r{}/{}".format(self.counter, self.total), end="")
+        if trajectory.is_last():
+            plot_data.append(env.reward)
+            env.reset()
 
 
 from tf_agents.metrics import tf_metrics
@@ -68,7 +89,7 @@ from tf_agents.drivers.dynamic_step_driver import DynamicStepDriver
 collect_driver = DynamicStepDriver(
     tf_env,
     agent.collect_policy,
-    observers=[replay_buffer_observer] + train_metrics,
+    observers=[replay_buffer_observer, CollectRewardData()] + train_metrics,
     num_steps=update_period)  # collect 4 steps for each training iteration
 
 dataset = replay_buffer.as_dataset(
@@ -82,6 +103,8 @@ import logging
 logging.getLogger().setLevel(logging.INFO)
 log_metrics(train_metrics)
 
+import datetime
+
 
 def train_agent(n_iterations):
     time_step = None
@@ -91,34 +114,22 @@ def train_agent(n_iterations):
         time_step, policy_state = collect_driver.run(time_step, policy_state)
         trajectories, buffer_info = next(iterator)
         train_loss = agent.train(trajectories)
-        print("\r{} loss:{:.5f}".format(
-            iteration, train_loss.loss.numpy()), end="")
-        if iteration % 1000 == 0:
+        print("\r{} loss:{:.5f}".format(iteration, train_loss.loss.numpy()), end="")
+        if iteration > 1 and iteration % 10000 == 0:
             log_metrics(train_metrics)
-            my_policy = agent.collect_policy
+            saver = PolicySaver(agent.collect_policy, batch_size=None)
+            saver.save(f'Policy_{datetime.date.today()}_{iteration}')
+            plt.plot(plot_data)
+            plt.xlabel("Episode")
+            plt.ylabel("Sum of rewards")
+            save_fig(fig_id=f'Policy_{datetime.date.today()}_{iteration}')
+            plot_data.clear()
 
-    saver = PolicySaver(my_policy, batch_size=None)
-    saver.save('policy_%d' % iteration)
+train_agent(n_iterations=1000000)
+
+plt.plot(plot_data)
+plt.xlabel("Episode")
+plt.ylabel("Sum of rewards")
+plt.show()
 
 
-train_agent(n_iterations=2000)
-total_score2 = 0
-
-
-def save_frames(trajectory):
-    global total_score2
-    total_score2 += tf_env.pyenv.current_time_step().reward[0]
-
-
-policy_dir = 'policy_1999'
-trained_policy = policy_saver.PolicySaver(agent.policy)
-saved_policy = tf.saved_model.load(policy_dir)
-
-input("Press Enter to continue...")
-watch_driver = DynamicStepDriver(
-    tf_env,
-    trained_policy,
-    observers=[save_frames],
-    num_steps=200)
-final_time_step, final_policy_state = watch_driver.run()
-print(f'\nafter training score: {total_score2}')

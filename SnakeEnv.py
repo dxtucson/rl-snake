@@ -232,7 +232,7 @@ class SnakeEnv(py_environment.PyEnvironment):
                                      reward=100)
             elif self.head_hit_self():
                 return ts.transition(np.array(self._state, dtype=np.int32),
-                                     reward=-0.1)
+                                     reward=-10)
             else:
                 return ts.transition(np.array(self._state, dtype=np.int32),
                                      reward=0)

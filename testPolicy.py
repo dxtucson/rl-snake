@@ -6,7 +6,7 @@ import numpy as np
 
 from SnakeEnv import SnakeEnv
 
-policy_dir = 'policy_39999'
+policy_dir = 'Policy_2023-07-17_80000'
 saved_policy = tf.saved_model.load(policy_dir)
 
 env = SnakeEnv()
@@ -28,6 +28,6 @@ watch_driver = DynamicStepDriver(
     tf_env,
     saved_policy,
     observers=[save_frames],
-    num_steps=2000)
+    num_steps=10000)
 final_time_step, final_policy_state = watch_driver.run()
 print(f'\nafter training score: {total_score2}')
